@@ -33,53 +33,48 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAMEZ }}
-          password: ${{ secrets.DOCKERHUB_TOKENZ }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push accountservice
+      - name: Build and push accounts-db
         working-directory: src/accounts/accounts-db
         run: |
-          docker build -t iscanprint/accounts-db:2.0 .
-          docker push iscanprint/accounts-db:2.0
+          docker build -t iscanprint/accounts-dbbankapp:2.0 .
+          docker push iscanprint/accounts-dbbankapp:2.0
 
-       - name: Build and push accountservice
+      - name: Build and push contacts
         working-directory: src/accounts/contacts
         run: |
-          docker build -t iscanprint/contacts:2.0 .
-          docker push iscanprint/contacts:2.0
+          docker build -t iscanprint/contactsbankapp:2.0 .
+          docker push iscanprint/contactsbankapp:2.0
 
-       - name: Build and push accountservice
+      - name: Build and push userservice
         working-directory: src/accounts/userservice
         run: |
-          docker build -t iscanprint/userservice:2.0 .
-          docker push iscanprint/userservice:2.0
+          docker build -t iscanprint/userservicebankapp:2.0 .
+          docker push iscanprint/userservicebankapp:2.0
 
       - name: Build and push frontend
         working-directory: src/frontend
         run: |
-          docker build -t iscanprint/frontend:2.0 .
-          docker push iscanprint/frontend:2.0
+          docker build -t iscanprint/frontendbankapp:2.0 .
+          docker push iscanprint/frontendbankapp:2.0
 
-      - name: Build and push ledger
+      - name: Build and push ledger-db
         working-directory: src/ledger/ledger-db
         run: |
-          docker build -t iscanprint/ledger-db:2.0 .
-          docker push iscanprint/ledger-db:2.0
-
-     
+          docker build -t iscanprint/ledger-dbbankapp:2.0 .
+          docker push iscanprint/ledger-dbbankapp:2.0
 
       - name: Build and push loadgenerator
         working-directory: src/loadgenerator
         run: |
-          docker build -t iscanprint/loadgenerator:2.0 .
-          docker push iscanprint/loadgenerator:2.0
+          docker build -t iscanprint/loadgeneratorbankapp:2.0 .
+          docker push iscanprint/loadgeneratorbankapp:2.0
 
       - name: Build and push ledgermonolith
         working-directory: src/ledgermonolith
         run: |
-          mvn package -Dskiptest=true
-          docker build -t iscanprint/ledgermonolith:2.0  .
-          docker push iscanprint/ledgermonolith:2.0
-
-    
-     
+          mvn package -DskipTests=true
+          docker build -t iscanprint/ledgermonolithbankapp:2.0 .
+          docker push iscanprint/ledgermonolithbankapp:2.0
