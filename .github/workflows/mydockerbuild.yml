@@ -36,35 +36,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAMEZ }}
           password: ${{ secrets.DOCKERHUB_TOKENZ }}
 
-      - name: Build and push adservice
-        working-directory: src/adservice
+      - name: Build and push accountservice
+        working-directory: src/accounts/accounts-db
         run: |
-          docker build -t limkel/adservice:2.1 .
-          docker push limkel/adservice:2.1
+          docker build -t iscanprint/accounts-db:2.0 .
+          docker push iscanprint/accounts-db:2.0
 
-      - name: Build and push cartservice
-        working-directory: src/cartservice/src
+       - name: Build and push accountservice
+        working-directory: src/accounts/contacts
         run: |
-          docker build -t limkel/cartservice:2.1 .
-          docker push limkel/cartservice:2.1
+          docker build -t iscanprint/contacts:2.0 .
+          docker push iscanprint/contacts:2.0
 
-      - name: Build and push checkoutservice
-        working-directory: src/checkoutservice
+       - name: Build and push accountservice
+        working-directory: src/accounts/userservice
         run: |
-          docker build -t limkel/checkoutservice:2.1 .
-          docker push limkel/checkoutservice:2.1
+          docker build -t iscanprint/userservice:2.0 .
+          docker push iscanprint/userservice:2.0
 
-      - name: Build and push currencyservice
-        working-directory: src/currencyservice
+      - name: Build and push frontend
+        working-directory: src/frontend
         run: |
-          docker build -t limkel/currencyservice:2.1 .
-          docker push limkel/currencyservice:2.1
+          docker build -t iscanprint/frontend:2.0 .
+          docker push iscanprint/frontend:2.0
 
-      - name: Build and push emailservice
-        working-directory: src/emailservice
+      - name: Build and push ledger
+        working-directory: src/ledger/ledger-db
         run: |
-          docker build -t limkel/emailservice:2.1 .
-          docker push limkel/emailservice:2.1
+          docker build -t iscanprint/ledger-db:2.0 .
+          docker push iscanprint/ledger-db:2.0
 
       - name: Build and push frontend
         working-directory: src/frontend
