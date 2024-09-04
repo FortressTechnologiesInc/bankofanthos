@@ -1,0 +1,1074 @@
+
+apiVersion: v1
+data:
+  ACCOUNTS_DB_URI: postgresql://accounts-admin:accounts-pwd@accounts-db:5432/accounts-db
+  POSTGRES_DB: accounts-db
+  POSTGRES_PASSWORD: accounts-pwd
+  POSTGRES_USER: accounts-admin
+kind: ConfigMap
+metadata:
+  labels:
+    app: accounts-db
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: db
+  name: accounts-db-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: db
+  name: accounts-db
+spec:
+  ports:
+    - name: tcp
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+  selector:
+    app: accounts-db
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: db
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: db
+  name: accounts-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: accounts-db
+      application: bank-of-anthos
+      environment: development
+      team: accounts
+      tier: db
+  serviceName: accounts-db
+  template:
+    metadata:
+      labels:
+        app: accounts-db
+        application: bank-of-anthos
+        environment: development
+        team: accounts
+        tier: db
+    spec:
+      containers:
+        - envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: accounts-db-config
+            - configMapRef:
+                name: demo-data-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/accounts-db:v0.6.5@sha256:abb955756a82b115e0fd9c5fa1527ae1a744b398b357fd6d7a26348feccad181
+          name: accounts-db
+          ports:
+            - containerPort: 5432
+          resources:
+            limits:
+              cpu: 250m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgresdb
+              subPath: postgres
+      serviceAccount: bank-of-anthos
+      serviceAccountName: default
+      volumes:
+        - emptyDir: {}
+          name: postgresdb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: balancereader
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: balancereader
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: balancereader
+spec:
+  selector:
+    matchLabels:
+      app: balancereader
+      application: bank-of-anthos
+      environment: development
+      team: ledger
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: balancereader
+        application: bank-of-anthos
+        environment: development
+        team: ledger
+        tier: backend
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: ENABLE_METRICS
+              value: "true"
+            - name: POLL_MS
+              value: "100"
+            - name: CACHE_SIZE
+              value: "1000000"
+            - name: JVM_OPTS
+              value: -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xms256m -Xmx512m
+            - name: LOG_LEVEL
+              value: info
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: ledger-db-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/balancereader:v0.6.5@sha256:de01f16554ae2d0b49ac85116e6307da8c0f8a35f50a0cf25e1e4a4fe18dca83
+          livenessProbe:
+            httpGet:
+              path: /healthy
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            timeoutSeconds: 10
+          name: balancereader
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              ephemeral-storage: 0.5Gi
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 0.5Gi
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /healthy
+              port: 8080
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: publickey
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: publickey
+          secret:
+            items:
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: environment-config
+data:
+  LOCAL_ROUTING_NUM: "883745000"
+  PUB_KEY_PATH: "/tmp/.ssh/publickey"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-api-config
+data:
+  TRANSACTIONS_API_ADDR: "ledgerwriter:8080"
+  BALANCES_API_ADDR: "balancereader:8080"
+  HISTORY_API_ADDR: "transactionhistory:8080"
+  CONTACTS_API_ADDR: "contacts:8080"
+  USERSERVICE_API_ADDR: "userservice:8080"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-data-config
+data:
+  USE_DEMO_DATA: "True"
+  DEMO_LOGIN_USERNAME: "testuser"
+  # All demo user accounts are hardcoded to use the login password 'bankofanthos'
+  DEMO_LOGIN_PASSWORD: "bankofanthos"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: gke-workload-development@bank-of-anthos-ci.iam.gserviceaccount.com
+  name: bank-of-anthos
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  name: contacts
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: contacts
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  name: contacts
+spec:
+  selector:
+    matchLabels:
+      app: contacts
+      application: bank-of-anthos
+      environment: development
+      team: accounts
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: contacts
+        application: bank-of-anthos
+        environment: development
+        team: accounts
+        tier: backend
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: LOG_LEVEL
+              value: info
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: accounts-db-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/contacts:v0.6.5@sha256:e451dcac7d34a7bde979c7f02d4c7ebd83a77aff373e1131ce3a2bba2f7fdc1a
+          name: contacts
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 250m
+              ephemeral-storage: 0.25Gi
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 0.25Gi
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: publickey
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: publickey
+          secret:
+            items:
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
+---
+apiVersion: v1
+data:
+  POSTGRES_DB: postgresdb
+  POSTGRES_PASSWORD: password
+  POSTGRES_USER: admin
+  SPRING_DATASOURCE_PASSWORD: password
+  SPRING_DATASOURCE_URL: jdbc:postgresql://ledger-db:5432/postgresdb
+  SPRING_DATASOURCE_USERNAME: admin
+kind: ConfigMap
+metadata:
+  labels:
+    app: ledger-db
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: db
+  name: ledger-db-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: db
+  name: ledger-db
+spec:
+  ports:
+    - name: tcp
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: ledger-db
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: db
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: db
+  name: ledger-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ledger-db
+      application: bank-of-anthos
+      environment: development
+      team: ledger
+      tier: db
+  serviceName: ledger-db
+  template:
+    metadata:
+      labels:
+        app: ledger-db
+        application: bank-of-anthos
+        environment: development
+        team: ledger
+        tier: db
+    spec:
+      containers:
+        - envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: ledger-db-config
+            - configMapRef:
+                name: demo-data-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/ledger-db:v0.6.5@sha256:cc4fd25f301ab6d46b1312244d6931babc4c6cb66c5cb6d31d4a1adfa318a321
+          name: postgres
+          ports:
+            - containerPort: 5432
+          resources:
+            limits:
+              cpu: 250m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgresdb
+              subPath: postgres
+      serviceAccount: bank-of-anthos
+      serviceAccountName: default
+      volumes:
+        - emptyDir: {}
+          name: postgresdb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: ledgerwriter
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: ledgerwriter
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: ledgerwriter
+spec:
+  selector:
+    matchLabels:
+      app: ledgerwriter
+      application: bank-of-anthos
+      environment: development
+      team: ledger
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: ledgerwriter
+        application: bank-of-anthos
+        environment: development
+        team: ledger
+        tier: backend
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: ENABLE_METRICS
+              value: "true"
+            - name: JVM_OPTS
+              value: -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xms256m -Xmx512m
+            - name: LOG_LEVEL
+              value: info
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: service-api-config
+            - configMapRef:
+                name: ledger-db-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/ledgerwriter:v0.6.5@sha256:5b66d6888b87993c8ebe260fe33005c4e4bc2bdae4b5682874e1a078d37ff3b2
+          name: ledgerwriter
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              ephemeral-storage: 0.5Gi
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 0.5Gi
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /ready
+              port: 8080
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: publickey
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: publickey
+          secret:
+            items:
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    environment: development
+    team: loadgenerator
+    tier: test
+  name: loadgenerator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgenerator
+      environment: development
+      team: loadgenerator
+      tier: test
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+      labels:
+        app: loadgenerator
+        environment: development
+        team: loadgenerator
+        tier: test
+    spec:
+      containers:
+        - env:
+            - name: FRONTEND_ADDR
+              value: frontend:80
+            - name: USERS
+              value: "5"
+            - name: LOG_LEVEL
+              value: error
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/loadgenerator:v0.6.5@sha256:24369e6b21c773d6afc016997d805b08b1a3ec1c5a6e1d281298180f2f45e0b5
+          name: loadgenerator
+          resources:
+            limits:
+              cpu: 250m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: transactionhistory
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: transactionhistory
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: ledger
+    tier: backend
+  name: transactionhistory
+spec:
+  selector:
+    matchLabels:
+      app: transactionhistory
+      application: bank-of-anthos
+      environment: development
+      team: ledger
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: transactionhistory
+        application: bank-of-anthos
+        environment: development
+        team: ledger
+        tier: backend
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: ENABLE_METRICS
+              value: "true"
+            - name: POLL_MS
+              value: "100"
+            - name: CACHE_SIZE
+              value: "1000"
+            - name: CACHE_MINUTES
+              value: "60"
+            - name: HISTORY_LIMIT
+              value: "100"
+            - name: JVM_OPTS
+              value: -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xms256m -Xmx512m
+            - name: LOG_LEVEL
+              value: info
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: ledger-db-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/transactionhistory:v0.6.5@sha256:54a2b0866df44a50832e71b130f3e069fe8bbce71309fb6cf390b19f64d92c09
+          livenessProbe:
+            httpGet:
+              path: /healthy
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            timeoutSeconds: 10
+          name: transactionhistory
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              ephemeral-storage: 0.5Gi
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 0.5Gi
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /healthy
+              port: 8080
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: publickey
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: publickey
+          secret:
+            items:
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  name: userservice
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: userservice
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: accounts
+    tier: backend
+  name: userservice
+spec:
+  selector:
+    matchLabels:
+      app: userservice
+      application: bank-of-anthos
+      environment: development
+      team: accounts
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: userservice
+        application: bank-of-anthos
+        environment: development
+        team: accounts
+        tier: backend
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: TOKEN_EXPIRY_SECONDS
+              value: "3600"
+            - name: PRIV_KEY_PATH
+              value: /tmp/.ssh/privatekey
+            - name: LOG_LEVEL
+              value: info
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: accounts-db-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/userservice:v0.6.5@sha256:f91e0e5bd6cdb16f6b867b2e3e874b23dd01f11592de006776f1dfb136702941
+          name: userservice
+          ports:
+            - containerPort: 8080
+              name: http-server
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              ephemeral-storage: 0.25Gi
+              memory: 256Mi
+            requests:
+              cpu: 260m
+              ephemeral-storage: 0.25Gi
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: keys
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: keys
+          secret:
+            items:
+              - key: jwtRS256.key
+                path: privatekey
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: frontend
+    tier: web
+  name: frontend
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app: frontend
+    application: bank-of-anthos
+    environment: development
+    team: frontend
+    tier: web
+  type: NodePort  #LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    application: bank-of-anthos
+    environment: development
+    team: frontend
+    tier: web
+  name: frontend
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+      application: bank-of-anthos
+      environment: development
+      team: frontend
+      tier: web
+  template:
+    metadata:
+      annotations:
+        proxy.istio.io/config: '{ "holdApplicationUntilProxyStarts": true }'
+      labels:
+        app: frontend
+        application: bank-of-anthos
+        environment: development
+        team: frontend
+        tier: web
+    spec:
+      containers:
+        - env:
+            - name: VERSION
+              value: v0.6.5
+            - name: PORT
+              value: "8080"
+            - name: ENABLE_TRACING
+              value: "true"
+            - name: SCHEME
+              value: http
+            - name: LOG_LEVEL
+              value: info
+            - name: DEFAULT_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  key: DEMO_LOGIN_USERNAME
+                  name: demo-data-config
+            - name: DEFAULT_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  key: DEMO_LOGIN_PASSWORD
+                  name: demo-data-config
+            - name: REGISTERED_OAUTH_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  key: DEMO_OAUTH_CLIENT_ID
+                  name: oauth-config
+                  optional: true
+            - name: ALLOWED_OAUTH_REDIRECT_URI
+              valueFrom:
+                configMapKeyRef:
+                  key: DEMO_OAUTH_REDIRECT_URI
+                  name: oauth-config
+                  optional: true
+          envFrom:
+            - configMapRef:
+                name: environment-config
+            - configMapRef:
+                name: service-api-config
+          image: us-central1-docker.pkg.dev/bank-of-anthos-ci/bank-of-anthos/frontend:v0.6.5@sha256:d72050f70d12383e4434ad04d189b681dc625f696087ddf0b5df641645c9dafa
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 30
+          name: front
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - all
+            privileged: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /tmp/.ssh
+              name: publickey
+              readOnly: true
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: bank-of-anthos
+      terminationGracePeriodSeconds: 5
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - name: publickey
+          secret:
+            items:
+              - key: jwtRS256.key.pub
+                path: publickey
+            secretName: jwt-key
