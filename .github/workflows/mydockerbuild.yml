@@ -16,8 +16,8 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          java-version: '17' # Use Java 17 to match your pom.xml configuration
-          distribution: 'temurin' # Use 'temurin' or another JDK distribution
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Setup Node.js
         uses: actions/setup-node@v2
@@ -33,10 +33,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Install Python dependencies
+        working-directory: src/
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-        working-directory: src/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
